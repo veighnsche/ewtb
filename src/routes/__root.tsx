@@ -44,7 +44,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
   const isWallRoute = pathname === '/'
 
   return (
-    <html lang="en" className="dark" data-theme="dark" suppressHydrationWarning>
+    <html lang="nl" className="dark" data-theme="dark" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
         <HeadContent />

@@ -41,6 +41,7 @@ export type Forecast = {
   condition: string
   high: string
   low: string
+  code?: number
 }
 
 export type AgendaItem = {
@@ -69,24 +70,24 @@ export type WallData = {
 }
 
 export const mockWallData: WallData = {
-  generatedAt: 'Updated 08:42 local',
-  statusLabel: 'Wall feed nominal',
-  connectionLabel: '7 local publishers online',
+  generatedAt: 'Bijgewerkt 08:42 lokaal',
+  statusLabel: 'Wall-feed normaal',
+  connectionLabel: '7 lokale bronnen online',
   clocks: [
     {
-      label: 'Paris',
+      label: 'Parijs',
       time: '08:42',
-      date: 'Tue 18 Mar',
+      date: 'di 18 mrt',
     },
     {
-      label: 'UTC',
-      time: '07:42',
-      date: 'Tue 18 Mar',
+      label: 'Palo Alto',
+      time: '00:42',
+      date: 'di 18 mrt',
     },
     {
-      label: 'Lab',
-      time: '08:42',
-      date: 'Low-latency link',
+      label: 'Shenzhen',
+      time: '15:42',
+      date: 'di 18 mrt',
     },
   ],
   hosts: [
@@ -95,12 +96,12 @@ export const mockWallData: WallData = {
       name: 'atlas',
       role: 'wall host',
       state: 'healthy',
-      uptime: '12d 4h',
+      uptime: '12d 4u',
       load: '0.43 / 0.51 / 0.60',
       metrics: [
         { label: 'CPU', value: '22%', percent: 22, state: 'healthy' },
-        { label: 'Memory', value: '48%', percent: 48, state: 'healthy' },
-        { label: 'Disk', value: '61%', percent: 61, state: 'warning' },
+        { label: 'Geheugen', value: '48%', percent: 48, state: 'healthy' },
+        { label: 'Schijf', value: '61%', percent: 61, state: 'warning' },
       ],
     },
     {
@@ -108,25 +109,38 @@ export const mockWallData: WallData = {
       name: 'leviathan',
       role: 'builder',
       state: 'warning',
-      uptime: '3d 18h',
+      uptime: '3d 18u',
       load: '2.11 / 1.93 / 1.72',
       metrics: [
         { label: 'CPU', value: '71%', percent: 71, state: 'warning' },
-        { label: 'Memory', value: '64%', percent: 64, state: 'warning' },
-        { label: 'Disk', value: '37%', percent: 37, state: 'healthy' },
+        { label: 'Geheugen', value: '64%', percent: 64, state: 'warning' },
+        { label: 'Schijf', value: '37%', percent: 37, state: 'healthy' },
       ],
     },
     {
       id: 'host-3',
       name: 'quartz',
-      role: 'calendar bridge',
+      role: 'agenda-koppeling',
       state: 'healthy',
-      uptime: '27d 2h',
+      uptime: '27d 2u',
       load: '0.08 / 0.12 / 0.18',
       metrics: [
         { label: 'CPU', value: '9%', percent: 9, state: 'healthy' },
-        { label: 'Memory', value: '32%', percent: 32, state: 'healthy' },
-        { label: 'Disk', value: '28%', percent: 28, state: 'healthy' },
+        { label: 'Geheugen', value: '32%', percent: 32, state: 'healthy' },
+        { label: 'Schijf', value: '28%', percent: 28, state: 'healthy' },
+      ],
+    },
+    {
+      id: 'host-4',
+      name: 'relay',
+      role: 'nieuwsfeed',
+      state: 'critical',
+      uptime: '6u 12m',
+      load: '3.48 / 2.91 / 2.44',
+      metrics: [
+        { label: 'CPU', value: '92%', percent: 92, state: 'critical' },
+        { label: 'Geheugen', value: '81%', percent: 81, state: 'warning' },
+        { label: 'Schijf', value: '73%', percent: 73, state: 'warning' },
       ],
     },
   ],
@@ -135,9 +149,9 @@ export const mockWallData: WallData = {
       id: 'turn-1',
       host: 'atlas',
       repo: 'ewtb',
-      title: 'Front-end shell scaffolded',
+      title: 'Front-end opgezet',
       summary:
-        'Generated TanStack Start, applied the shadcn preset, and replaced the stock starter copy with EWTB framing.',
+        'TanStack Start gegenereerd, de shadcn-preset toegepast en de standaardteksten vervangen door EWTB-copy.',
       finishedAt: '08:34',
       duration: '6m',
       state: 'complete',
@@ -146,9 +160,9 @@ export const mockWallData: WallData = {
       id: 'turn-2',
       host: 'leviathan',
       repo: 'LevitateOS',
-      title: 'Recipe parser test pass',
+      title: 'Recipe-parser getest',
       summary:
-        'Validated parser fixtures after the installation spec update and flagged one warning for follow-up.',
+        'Parserfixtures gevalideerd na de update van de installatiespecificatie en een waarschuwing gemarkeerd voor opvolging.',
       finishedAt: '08:16',
       duration: '11m',
       state: 'complete',
@@ -157,9 +171,9 @@ export const mockWallData: WallData = {
       id: 'turn-3',
       host: 'quartz',
       repo: 'calendar-bridge',
-      title: 'Meeting normalization blocked',
+      title: 'Meeting-normalisatie loopt vast',
       summary:
-        'OAuth refresh succeeded, but one recurring event payload still needs timezone normalization before sync.',
+        'OAuth-refresh is gelukt, maar een terugkerend event moet nog op timezone worden rechtgetrokken voor de sync.',
       finishedAt: '07:58',
       duration: '9m',
       state: 'blocked',
@@ -169,48 +183,48 @@ export const mockWallData: WallData = {
     {
       id: 'news-1',
       source: 'Kernel Weekly',
-      category: 'systems',
-      title: 'Kernel memory accounting patchset moves closer to merge',
-      age: '18m ago',
+      category: 'systemen',
+      title: 'Kernel-patchset voor geheugentelling komt dichter bij merge',
+      age: '18m geleden',
     },
     {
       id: 'news-2',
       source: 'Fedora Notes',
       category: 'distro',
-      title: 'Packaging workflow improvements reduce local build churn',
-      age: '42m ago',
+      title: 'Verbeteringen in packaging-workflows verminderen lokale build-churn',
+      age: '42m geleden',
     },
     {
       id: 'news-3',
       source: 'AI Infra Digest',
       category: 'agents',
-      title: 'New patterns emerge for local-first orchestration and audit trails',
-      age: '1h ago',
+      title: 'Nieuwe patronen ontstaan voor local-first orchestration en audit trails',
+      age: '1u geleden',
     },
   ],
   forecast: [
-    { day: 'Today', condition: 'Cloud break', high: '14°', low: '8°' },
-    { day: 'Wed', condition: 'Clear', high: '16°', low: '7°' },
-    { day: 'Thu', condition: 'Rain', high: '12°', low: '6°' },
+    { day: 'Vandaag', condition: 'Wolken en opklaringen', high: '14°', low: '8°', code: 2 },
+    { day: 'Wo', condition: 'Helder', high: '16°', low: '7°', code: 0 },
+    { day: 'Do', condition: 'Regen', high: '12°', low: '6°', code: 61 },
   ],
   agenda: [
     {
       id: 'agenda-1',
       time: '09:30',
-      title: 'Review wall layout pass',
-      context: 'Decide screen zoning and panel priority.',
+      title: 'Wall-layout review',
+      context: 'Schermzones en paneelprioriteit bepalen.',
     },
     {
       id: 'agenda-2',
       time: '11:00',
-      title: 'LevitateOS package audit',
-      context: 'Check local recipe drift against pinned inputs.',
+      title: 'LevitateOS package-audit',
+      context: 'Lokale recipe-drift controleren tegen gepinde inputs.',
     },
     {
       id: 'agenda-3',
       time: '15:00',
-      title: 'Calendar bridge tuning',
-      context: 'Refine agent prompts for scheduling assistance.',
+      title: 'Agenda-koppeling bijstellen',
+      context: 'Agentprompts aanscherpen voor planningshulp.',
     },
   ],
 }
