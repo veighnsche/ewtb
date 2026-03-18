@@ -69,6 +69,8 @@ describe('getWallCollectorData', () => {
     expect(fetchMock).toHaveBeenCalledTimes(2)
     expect(result.connectionLabel).toBe('1/2 hosts online')
     expect(result.statusLabel).toBe('Wall-feed vraagt aandacht')
+    expect(result.cpuAggregatePercent).toBe(12)
+    expect(result.cpuAggregateSeries).toEqual([12])
     expect(result.hosts).toHaveLength(2)
     expect(result.hosts[0]).toMatchObject({
       id: 'alpha',

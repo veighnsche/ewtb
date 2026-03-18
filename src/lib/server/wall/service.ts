@@ -37,22 +37,27 @@ type WallCollectorResult = {
   generatedAt: string
   statusLabel: string
   connectionLabel: string
+  cpuAggregatePercent: number
+  cpuAggregateSeries: number[]
   hosts: HostStatus[]
 }
 
 type CollectedHost = {
   host: HostStatus
   reachable: boolean
+  cpuPercent: number
 }
 
 type CollectorState = {
   cache: WallCollectorResult | null
   refreshPromise: Promise<WallCollectorResult> | null
   started: boolean
+  cpuAggregateSeries: number[]
 }
 
 const SAMPLE_INTERVAL_MS = 5_000
 const REQUEST_TIMEOUT_MS = 2_500
+const CPU_AGGREGATE_HISTORY_POINTS = 120
 const globalKey = '__ewtbWallCollectorState'
 
 const defaultTargets: WallHostTarget[] = [
@@ -83,6 +88,7 @@ function getCollectorState(): CollectorState {
       cache: null,
       refreshPromise: null,
       started: false,
+      cpuAggregateSeries: [],
     }
   }
 
@@ -109,7 +115,7 @@ async function refreshCollector(state: CollectorState): Promise<WallCollectorRes
     return state.refreshPromise
   }
 
-  state.refreshPromise = collectWallData()
+  state.refreshPromise = collectWallData(state)
     .then((result) => {
       state.cache = result
       return result
@@ -121,14 +127,16 @@ async function refreshCollector(state: CollectorState): Promise<WallCollectorRes
   return state.refreshPromise
 }
 
-async function collectWallData(): Promise<WallCollectorResult> {
+async function collectWallData(state: CollectorState): Promise<WallCollectorResult> {
   const targets = getWallTargets()
   const results = await Promise.all(targets.map(fetchWallHost))
   const hosts = results.map((result) => result.host)
   const connectedHosts = results.filter((result) => result.reachable).length
+  const cpuAggregatePercent = results.reduce((total, result) => total + result.cpuPercent, 0)
   const overallState = hosts.reduce<HealthState>((current, host) => {
     return severityRank(host.state) > severityRank(current) ? host.state : current
   }, 'healthy')
+  const cpuAggregateSeries = pushHistoryPoint(state.cpuAggregateSeries, cpuAggregatePercent)
 
   return {
     generatedAt: `Bijgewerkt ${formatDistanceToNowStrict(new Date(), {
@@ -137,6 +145,8 @@ async function collectWallData(): Promise<WallCollectorResult> {
     })}`,
     statusLabel: overallState === 'healthy' ? 'Wall-feed normaal' : 'Wall-feed vraagt aandacht',
     connectionLabel: `${connectedHosts}/${hosts.length} hosts online`,
+    cpuAggregatePercent,
+    cpuAggregateSeries,
     hosts,
   }
 }
@@ -188,11 +198,13 @@ async function fetchWallHost(target: WallHostTarget): Promise<CollectedHost> {
     return {
       host: mapSnapshotToHost(target, snapshot),
       reachable: true,
+      cpuPercent: boundedPercent(snapshot.cpuPercent) ?? 0,
     }
   } catch (error) {
     return {
       host: buildUnavailableHost(target, error),
       reachable: false,
+      cpuPercent: 0,
     }
   } finally {
     clearTimeout(timeout)
@@ -254,6 +266,15 @@ function displayAddress(target: WallHostTarget, role?: string) {
   } catch {
     return target.name
   }
+}
+
+function pushHistoryPoint(series: number[], value: number) {
+  const nextSeries = [...series, value]
+  if (nextSeries.length <= CPU_AGGREGATE_HISTORY_POINTS) {
+    return nextSeries
+  }
+
+  return nextSeries.slice(nextSeries.length - CPU_AGGREGATE_HISTORY_POINTS)
 }
 
 function buildMetric(label: string, percent: number | null) {
