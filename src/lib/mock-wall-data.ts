@@ -14,6 +14,8 @@ export type HostStatus = {
   state: HealthState
   uptime: string
   load: string
+  cpuTempC: number
+  cpuTempSeries: number[]
   metrics: HostMetric[]
 }
 
@@ -34,6 +36,7 @@ export type Headline = {
   category: string
   title: string
   age: string
+  imageSrc: string
 }
 
 export type Forecast = {
@@ -98,6 +101,8 @@ export const mockWallData: WallData = {
       state: 'healthy',
       uptime: '12d 4u',
       load: '0.43 / 0.51 / 0.60',
+      cpuTempC: 54,
+      cpuTempSeries: [50, 51, 52, 52, 53, 52, 54, 55, 54, 53, 54, 54],
       metrics: [
         { label: 'CPU', value: '22%', percent: 22, state: 'healthy' },
         { label: 'Geheugen', value: '48%', percent: 48, state: 'healthy' },
@@ -111,6 +116,8 @@ export const mockWallData: WallData = {
       state: 'warning',
       uptime: '3d 18u',
       load: '2.11 / 1.93 / 1.72',
+      cpuTempC: 73,
+      cpuTempSeries: [67, 68, 69, 71, 72, 74, 75, 73, 72, 74, 73, 73],
       metrics: [
         { label: 'CPU', value: '71%', percent: 71, state: 'warning' },
         { label: 'Geheugen', value: '64%', percent: 64, state: 'warning' },
@@ -124,6 +131,8 @@ export const mockWallData: WallData = {
       state: 'healthy',
       uptime: '27d 2u',
       load: '0.08 / 0.12 / 0.18',
+      cpuTempC: 41,
+      cpuTempSeries: [39, 39, 40, 40, 41, 40, 41, 42, 41, 41, 40, 41],
       metrics: [
         { label: 'CPU', value: '9%', percent: 9, state: 'healthy' },
         { label: 'Geheugen', value: '32%', percent: 32, state: 'healthy' },
@@ -137,6 +146,8 @@ export const mockWallData: WallData = {
       state: 'critical',
       uptime: '6u 12m',
       load: '3.48 / 2.91 / 2.44',
+      cpuTempC: 88,
+      cpuTempSeries: [73, 75, 77, 79, 82, 84, 86, 87, 89, 88, 87, 88],
       metrics: [
         { label: 'CPU', value: '92%', percent: 92, state: 'critical' },
         { label: 'Geheugen', value: '81%', percent: 81, state: 'warning' },
@@ -186,6 +197,7 @@ export const mockWallData: WallData = {
       category: 'systemen',
       title: 'Kernel-patchset voor geheugentelling komt dichter bij merge',
       age: '18m geleden',
+      imageSrc: '/mock-news/kernel-weekly.jpg',
     },
     {
       id: 'news-2',
@@ -193,6 +205,7 @@ export const mockWallData: WallData = {
       category: 'distro',
       title: 'Verbeteringen in packaging-workflows verminderen lokale build-churn',
       age: '42m geleden',
+      imageSrc: '/mock-news/fedora-notes.jpg',
     },
     {
       id: 'news-3',
@@ -200,6 +213,47 @@ export const mockWallData: WallData = {
       category: 'agents',
       title: 'Nieuwe patronen ontstaan voor local-first orchestration en audit trails',
       age: '1u geleden',
+      imageSrc: '/mock-news/ai-infra-digest.jpg',
+    },
+    {
+      id: 'news-4',
+      source: 'Linux Dispatch',
+      category: 'kernel',
+      title: 'Discussie laait op over scheduler-keuzes voor hybride desktop-workloads',
+      age: '1u geleden',
+      imageSrc: '/mock-news/kernel-weekly.jpg',
+    },
+    {
+      id: 'news-5',
+      source: 'Infra Brief',
+      category: 'self-hosting',
+      title: 'Steeds meer teams vervangen SaaS dashboards door lokale observability-stacks',
+      age: '1u geleden',
+      imageSrc: '/mock-news/ai-infra-digest.jpg',
+    },
+    {
+      id: 'news-6',
+      source: 'Open Source Weekly',
+      category: 'desktop',
+      title: 'Nieuwe compositor-builds richten zich nadrukkelijk op latency en leesbaarheid',
+      age: '2u geleden',
+      imageSrc: '/mock-news/fedora-notes.jpg',
+    },
+    {
+      id: 'news-7',
+      source: 'Dev Platform Review',
+      category: 'packaging',
+      title: 'Pakketaanvoer vertraagt minder door strakkere cachelagen en reproduceerbare builds',
+      age: '2u geleden',
+      imageSrc: '/mock-news/fedora-notes.jpg',
+    },
+    {
+      id: 'news-8',
+      source: 'Systems Journal',
+      category: 'infrastructuur',
+      title: 'Lokale agent-exporters winnen terrein als alternatief voor zwaardere monitoring agents',
+      age: '3u geleden',
+      imageSrc: '/mock-news/kernel-weekly.jpg',
     },
   ],
   forecast: [

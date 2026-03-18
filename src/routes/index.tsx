@@ -12,9 +12,10 @@ import {
   startOfWeek,
 } from 'date-fns'
 import { nl } from 'date-fns/locale'
-import { AlertTriangle, CheckCircle2, Clock3, Cpu, Newspaper, Rows3, SunMedium } from 'lucide-react'
+import { Clock3, Cpu, Newspaper, Rows3, SunMedium } from 'lucide-react'
 import { startTransition, useEffect, useState } from 'react'
 import type { IconType } from 'react-icons'
+import { Line, LineChart, ResponsiveContainer, YAxis } from 'recharts'
 import {
   WiCloud,
   WiCloudy,
@@ -42,19 +43,11 @@ import {
 import { Progress } from '#/components/ui/progress'
 import { Separator } from '#/components/ui/separator'
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from '#/components/ui/table'
-import {
   mockWallData,
   type AgendaItem,
-  type CodexTurn,
   type Forecast,
   type HealthState,
+  type Headline,
   type HostMetric,
   type HostStatus,
 } from '#/lib/mock-wall-data'
@@ -72,6 +65,8 @@ const CLOCKS = [
 
 const WEATHER_URL =
   'https://api.open-meteo.com/v1/forecast?latitude=48.8566&longitude=2.3522&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=Europe%2FParis&forecast_days=3'
+const NEWS_PAGE_SIZE = 4
+const NEWS_PAGE_INTERVAL_MS = 12_000
 
 export const Route = createFileRoute('/')({
   loader: async () => getLiveWidgets(),
@@ -91,10 +86,6 @@ function healthStateLabel(state: HealthState) {
   }
 }
 
-function turnStateLabel(state: CodexTurn['state']) {
-  return state === 'complete' ? 'voltooid' : 'geblokkeerd'
-}
-
 function toneClasses(state: HealthState) {
   switch (state) {
     case 'healthy':
@@ -108,8 +99,6 @@ function toneClasses(state: HealthState) {
 
 function App() {
   const liveWidgets = Route.useLoaderData()
-  const healthyHosts = mockWallData.hosts.filter((host) => host.state === 'healthy').length
-  const blockedTurns = mockWallData.codexTurns.filter((turn) => turn.state === 'blocked').length
   const [clocks, setClocks] = useState(liveWidgets.clocks)
   const [forecast, setForecast] = useState(liveWidgets.forecast)
 
@@ -170,14 +159,10 @@ function App() {
         </header>
 
         <section className="grid min-h-0 grid-cols-[0.95fr_1.2fr_1fr] gap-4">
-          <HostsPanel
-            hosts={mockWallData.hosts}
-            healthyHosts={healthyHosts}
-            blockedTurns={blockedTurns}
-          />
+          <HostsPanel hosts={mockWallData.hosts} />
           <AgendaPanel agenda={mockWallData.agenda} />
           <RightRail
-            turns={mockWallData.codexTurns}
+            headlines={mockWallData.headlines}
             forecast={forecast}
             clocks={clocks}
           />
@@ -223,12 +208,8 @@ function WallChip({ icon, label }: { icon: React.ReactNode; label: string }) {
 
 function HostsPanel({
   hosts,
-  healthyHosts,
-  blockedTurns,
 }: {
   hosts: HostStatus[]
-  healthyHosts: number
-  blockedTurns: number
 }) {
   return (
     <Card className="min-h-0 py-0">
@@ -238,87 +219,34 @@ function HostsPanel({
           Overzicht van de systemen. De agenda blijft de hoofdzaak.
         </CardDescription>
       </CardHeader>
-      <CardContent className="grid min-h-0 grid-rows-[auto_minmax(0,1fr)] gap-5 px-6 pb-5">
-        <div className="grid grid-cols-2 gap-3">
-          <div className="rounded-lg border px-4 py-4">
-            <p className="m-0 text-sm uppercase tracking-[0.18em] text-muted-foreground 2xl:text-base">
-              Systemen OK
-            </p>
-            <p className="mt-2 text-5xl font-semibold tracking-tight 2xl:text-6xl">
-              {healthyHosts}/{hosts.length}
-            </p>
-          </div>
-          <div className="rounded-lg border px-4 py-4">
-            <p className="m-0 text-sm uppercase tracking-[0.18em] text-muted-foreground 2xl:text-base">
-              Geblokkeerde taken
-            </p>
-            <p className="mt-2 text-5xl font-semibold tracking-tight 2xl:text-6xl">
-              {blockedTurns}
-            </p>
-          </div>
-        </div>
-
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead className="text-base 2xl:text-lg">Host</TableHead>
-              <TableHead className="text-base 2xl:text-lg">Status</TableHead>
-              <TableHead className="text-base 2xl:text-lg">Belasting</TableHead>
-              <TableHead className="text-base 2xl:text-lg">Uptime</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {hosts.map((host) => (
-              <TableRow key={host.id}>
-                <TableCell className="py-3">
-                  <div className="space-y-1">
-                    <div className="text-lg font-medium 2xl:text-xl">{host.name}</div>
-                    <div className="text-sm text-muted-foreground 2xl:text-base">{host.role}</div>
-                  </div>
-                </TableCell>
-                <TableCell className="py-3">
-                  <Badge variant="outline" className={`text-sm 2xl:text-base ${toneClasses(host.state)}`}>
-                    {healthStateLabel(host.state)}
-                  </Badge>
-                </TableCell>
-                <TableCell className="py-3 font-mono text-base 2xl:text-lg">{host.load}</TableCell>
-                <TableCell className="py-3 text-base text-muted-foreground 2xl:text-lg">
-                  {host.uptime}
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-
+      <CardContent className="grid min-h-0 px-6 pb-5">
         <div className="grid min-h-0 grid-cols-2 gap-4">
           {hosts.map((host) => (
             <div key={host.id} className="rounded-lg border p-4">
-              <div className="mb-4 flex items-start justify-between gap-3">
-                <div>
-                  <p className="m-0 text-xl font-medium 2xl:text-2xl">{host.name}</p>
-                  <p className="m-0 text-sm text-muted-foreground 2xl:text-base">{host.role}</p>
+              <div className="mb-4 grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
+                <div className="min-w-0">
+                  <p className="m-0 truncate text-xl font-medium 2xl:text-2xl">{host.name}</p>
+                  <p className="m-0 truncate text-sm text-muted-foreground 2xl:text-base">{host.role}</p>
                 </div>
                 <Badge
                   variant="outline"
-                  className={`text-sm 2xl:text-base ${toneClasses(host.state)}`}
+                  className={`shrink-0 text-sm 2xl:text-base ${toneClasses(host.state)}`}
                 >
                   {healthStateLabel(host.state)}
                 </Badge>
               </div>
-              <div className="mb-4 grid grid-cols-2 gap-3 text-sm 2xl:text-base">
-                <div className="rounded-md bg-muted/35 px-3 py-2">
-                  <p className="m-0 text-xs uppercase tracking-[0.16em] text-muted-foreground 2xl:text-sm">
-                    Uptime
-                  </p>
-                  <p className="mt-1 mb-0 font-medium">{host.uptime}</p>
-                </div>
-                <div className="rounded-md bg-muted/35 px-3 py-2">
-                  <p className="m-0 text-xs uppercase tracking-[0.16em] text-muted-foreground 2xl:text-sm">
-                    Belasting
-                  </p>
-                  <p className="mt-1 mb-0 font-mono text-sm 2xl:text-base">{host.load}</p>
-                </div>
+              <div className="mb-4 grid grid-cols-[1.15fr_0.95fr_0.95fr_0.95fr] gap-2 text-sm 2xl:text-base">
+                <StatBlock label="Uptime" value={host.uptime} />
+                {splitLoadValues(host.load).map((value, index) => (
+                  <StatBlock
+                    key={`${host.id}-load-${index + 1}`}
+                    label={LOAD_WINDOWS[index]}
+                    value={value}
+                    mono
+                  />
+                ))}
               </div>
+              <HostTemperatureChart host={host} />
               <div className="space-y-4">
                 {host.metrics.map((metric) => (
                   <MetricRow key={`${host.id}-${metric.label}`} metric={metric} />
@@ -332,6 +260,38 @@ function HostsPanel({
   )
 }
 
+const LOAD_WINDOWS = ['1m', '5m', '15m'] as const
+
+function splitLoadValues(load: string) {
+  return load.split('/').map((value) => value.trim())
+}
+
+function StatBlock({
+  label,
+  value,
+  mono = false,
+}: {
+  label: string
+  value: string
+  mono?: boolean
+}) {
+  return (
+    <div className="min-w-0">
+      <p className="m-0 whitespace-nowrap text-[10px] uppercase tracking-[0.12em] text-muted-foreground 2xl:text-xs">
+        {label}
+      </p>
+      <p
+        className={[
+          'mt-1 mb-0 whitespace-nowrap font-medium text-sm 2xl:text-base',
+          mono ? 'font-mono' : '',
+        ].join(' ')}
+      >
+        {value}
+      </p>
+    </div>
+  )
+}
+
 function MetricRow({ metric }: { metric: HostMetric }) {
   return (
     <div className="space-y-2">
@@ -340,6 +300,40 @@ function MetricRow({ metric }: { metric: HostMetric }) {
         <span className="font-medium">{metric.value}</span>
       </div>
       <Progress value={metric.percent} className="h-3" />
+    </div>
+  )
+}
+
+function HostTemperatureChart({ host }: { host: HostStatus }) {
+  const data = host.cpuTempSeries.map((value, index) => ({
+    index,
+    value,
+  }))
+  const stroke = temperatureStroke(host.state)
+
+  return (
+    <div className="mb-4">
+      <div className="mb-2 flex items-end justify-between">
+        <p className="m-0 text-[10px] uppercase tracking-[0.12em] text-muted-foreground 2xl:text-xs">
+          CPU temperatuur
+        </p>
+        <p className="m-0 font-mono text-lg font-medium 2xl:text-xl">{host.cpuTempC}°C</p>
+      </div>
+      <div className="h-16 w-full">
+        <ResponsiveContainer width="100%" height="100%">
+          <LineChart data={data} margin={{ top: 4, right: 0, bottom: 4, left: 0 }}>
+            <YAxis domain={['dataMin - 4', 'dataMax + 4']} hide />
+            <Line
+              type="monotone"
+              dataKey="value"
+              stroke={stroke}
+              strokeWidth={2.5}
+              dot={false}
+              isAnimationActive={false}
+            />
+          </LineChart>
+        </ResponsiveContainer>
+      </div>
     </div>
   )
 }
@@ -375,40 +369,77 @@ function AgendaPanel({ agenda }: { agenda: AgendaItem[] }) {
   )
 }
 
-function ActivityPanel({ turns }: { turns: CodexTurn[] }) {
+function NewsPanel({ headlines }: { headlines: Headline[] }) {
+  const pages = chunkHeadlines(headlines, NEWS_PAGE_SIZE)
+  const [pageIndex, setPageIndex] = useState(0)
+
+  useEffect(() => {
+    setPageIndex(0)
+  }, [headlines.length])
+
+  useEffect(() => {
+    if (pages.length <= 1) return
+
+    const timer = window.setInterval(() => {
+      startTransition(() => {
+        setPageIndex((current) => (current + 1) % pages.length)
+      })
+    }, NEWS_PAGE_INTERVAL_MS)
+
+    return () => {
+      window.clearInterval(timer)
+    }
+  }, [pages.length])
+
+  const visibleHeadlines = pages[pageIndex] ?? []
+
   return (
     <Card className="min-h-0 py-0">
       <CardHeader className="px-5 pt-4">
-        <CardTitle className="text-2xl 2xl:text-3xl">Codex-werk</CardTitle>
-        <CardDescription className="text-base 2xl:text-lg">
-          Secundaire feed. Wel zichtbaar, niet dominant.
-        </CardDescription>
+        <div className="flex items-start justify-between gap-4">
+          <div>
+            <CardTitle className="text-2xl 2xl:text-3xl">Nieuws</CardTitle>
+            <CardDescription className="text-base 2xl:text-lg">
+              Relevante koppen voor de wall. Kort, scanbaar en ondergeschikt aan de agenda.
+            </CardDescription>
+          </div>
+          {pages.length > 1 ? (
+            <div className="flex items-center gap-2 pt-1">
+              {pages.map((_, index) => (
+                <span
+                  key={`news-page-${index + 1}`}
+                  className={[
+                    'block h-2.5 w-2.5 rounded-full transition-colors',
+                    index === pageIndex ? 'bg-primary' : 'bg-muted',
+                  ].join(' ')}
+                />
+              ))}
+            </div>
+          ) : null}
+        </div>
       </CardHeader>
       <CardContent className="grid min-h-0 gap-3 px-5 pb-5">
-        {turns.map((turn) => (
-          <div key={turn.id} className="grid grid-cols-[1fr_auto] gap-4 rounded-lg border p-4">
-            <div className="space-y-3">
+        {visibleHeadlines.map((headline) => (
+          <div
+            key={headline.id}
+            className="grid grid-cols-[9rem_minmax(0,1fr)_auto] gap-4 rounded-lg border p-4 2xl:grid-cols-[10rem_minmax(0,1fr)_auto]"
+          >
+            <img
+              src={headline.imageSrc}
+              alt=""
+              className="h-24 w-36 rounded-md object-cover 2xl:h-28 2xl:w-40"
+            />
+            <div className="min-w-0 space-y-3">
               <div className="flex flex-wrap gap-2">
-                <Badge variant="outline" className="text-xs 2xl:text-sm">{turn.host}</Badge>
-                <Badge variant="outline" className="text-xs 2xl:text-sm">{turn.repo}</Badge>
-                <Badge
-                  variant="outline"
-                  className={`text-xs 2xl:text-sm ${toneClasses(turn.state === 'complete' ? 'healthy' : 'warning')}`}
-                >
-                  {turn.state === 'blocked' ? <AlertTriangle className="size-3.5" /> : <CheckCircle2 className="size-3.5" />}
-                  {turnStateLabel(turn.state)}
-                </Badge>
+                <Badge variant="outline" className="text-xs 2xl:text-sm">{headline.source}</Badge>
+                <Badge variant="outline" className="text-xs 2xl:text-sm">{headline.category}</Badge>
               </div>
-              <div className="space-y-2">
-                <p className="m-0 text-xl font-medium leading-tight 2xl:text-2xl">{turn.title}</p>
-                <p className="m-0 text-base leading-6 text-muted-foreground 2xl:text-lg">
-                  {turn.summary}
-                </p>
-              </div>
+              <p className="m-0 line-clamp-3 text-xl font-medium leading-tight 2xl:text-2xl">
+                {headline.title}
+              </p>
             </div>
             <div className="text-right">
-              <p className="m-0 text-base font-medium 2xl:text-xl">{turn.finishedAt}</p>
-              <p className="m-0 text-sm text-muted-foreground 2xl:text-base">{turn.duration}</p>
+              <p className="m-0 text-sm text-muted-foreground 2xl:text-base">{headline.age}</p>
             </div>
           </div>
         ))}
@@ -418,17 +449,17 @@ function ActivityPanel({ turns }: { turns: CodexTurn[] }) {
 }
 
 function RightRail({
-  turns,
+  headlines,
   forecast,
   clocks,
 }: {
-  turns: CodexTurn[]
+  headlines: Headline[]
   forecast: Forecast[] | null
   clocks: typeof mockWallData.clocks
 }) {
   return (
     <div className="grid min-h-0 grid-rows-[1.1fr_auto] gap-4">
-      <ActivityPanel turns={turns} />
+      <NewsPanel headlines={headlines} />
 
       <div className="grid grid-cols-2 gap-4">
         <Card className="py-0">
@@ -621,4 +652,25 @@ function weatherCodeIcon(code: number): IconType {
   if (code >= 95) return WiThunderstorm
 
   return WiCloud
+}
+
+function temperatureStroke(state: HealthState) {
+  switch (state) {
+    case 'healthy':
+      return 'hsl(142 76% 45%)'
+    case 'warning':
+      return 'hsl(38 92% 50%)'
+    case 'critical':
+      return 'hsl(0 84% 60%)'
+  }
+}
+
+function chunkHeadlines(headlines: Headline[], pageSize: number) {
+  const pages: Headline[][] = []
+
+  for (let index = 0; index < headlines.length; index += pageSize) {
+    pages.push(headlines.slice(index, index + pageSize))
+  }
+
+  return pages
 }
