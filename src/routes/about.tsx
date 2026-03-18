@@ -1,4 +1,12 @@
 import { createFileRoute } from '@tanstack/react-router'
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from '#/components/ui/card'
+import { Separator } from '#/components/ui/separator'
 
 export const Route = createFileRoute('/about')({
   component: About,
@@ -6,18 +14,29 @@ export const Route = createFileRoute('/about')({
 
 function About() {
   return (
-    <main className="page-wrap px-4 py-12">
-      <section className="island-shell rounded-2xl p-6 sm:p-8">
-        <p className="island-kicker mb-2">About</p>
-        <h1 className="display-title mb-3 text-4xl font-bold text-[var(--sea-ink)] sm:text-5xl">
-          A small starter with room to grow.
-        </h1>
-        <p className="m-0 max-w-3xl text-base leading-8 text-[var(--sea-ink-soft)]">
-          TanStack Start gives you type-safe routing, server functions, and
-          modern SSR defaults. Use this as a clean foundation, then layer in
-          your own routes, styling, and add-ons.
-        </p>
-      </section>
+    <main className="page-wrap px-4 py-8">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-2xl">About EWTB</CardTitle>
+          <CardDescription>
+            The improvised wall presentation layer has been removed.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-6">
+          <p className="m-0 max-w-3xl text-sm leading-7 text-muted-foreground">
+            This project now has a neutral baseline again: TanStack Start for routing and app
+            structure, `shadcn/ui` for primitives, and mock telemetry data for the content
+            model. The next design pass should start from information architecture and
+            interaction needs, not from decorative card composition.
+          </p>
+          <Separator />
+          <p className="m-0 max-w-3xl text-sm leading-7 text-muted-foreground">
+            The home route is currently a system-driven dashboard scaffold intended to be
+            redesigned deliberately. It is no longer using the previous atoms, molecules,
+            organisms, or template layer.
+          </p>
+        </CardContent>
+      </Card>
     </main>
   )
 }
