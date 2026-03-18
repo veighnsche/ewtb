@@ -14,6 +14,7 @@ import {
 import { nl } from 'date-fns/locale'
 import { Clock3, Cpu, Newspaper, Rows3, SunMedium } from 'lucide-react'
 import { startTransition, useEffect, useState } from 'react'
+import { useServerFn } from '@tanstack/react-start'
 import type { IconType } from 'react-icons'
 import { Line, LineChart, ResponsiveContainer, YAxis } from 'recharts'
 import {
@@ -51,10 +52,14 @@ import {
   type HostMetric,
   type HostStatus,
 } from '#/lib/mock-wall-data'
+import { getWallNewsFeed } from '#/lib/server/news'
+import { getWallCollector } from '#/lib/server/wall'
 
 type LiveWidgets = {
+  wall: Awaited<ReturnType<typeof getWallCollector>>
   clocks: typeof mockWallData.clocks
   forecast: Forecast[] | null
+  newsFeed: Awaited<ReturnType<typeof getWallNewsFeed>>
 }
 
 const CLOCKS = [
@@ -65,8 +70,9 @@ const CLOCKS = [
 
 const WEATHER_URL =
   'https://api.open-meteo.com/v1/forecast?latitude=48.8566&longitude=2.3522&daily=weather_code,temperature_2m_max,temperature_2m_min&timezone=Europe%2FParis&forecast_days=3'
-const NEWS_PAGE_SIZE = 4
+const NEWS_PAGE_SIZE = 7
 const NEWS_PAGE_INTERVAL_MS = 12_000
+const WALL_REFRESH_MS = 5_000
 
 export const Route = createFileRoute('/')({
   loader: async () => getLiveWidgets(),
@@ -99,8 +105,12 @@ function toneClasses(state: HealthState) {
 
 function App() {
   const liveWidgets = Route.useLoaderData()
+  const [wall, setWall] = useState(liveWidgets.wall)
   const [clocks, setClocks] = useState(liveWidgets.clocks)
   const [forecast, setForecast] = useState(liveWidgets.forecast)
+  const [newsFeed, setNewsFeed] = useState(liveWidgets.newsFeed)
+  const fetchNewsFeed = useServerFn(getWallNewsFeed)
+  const fetchWall = useServerFn(getWallCollector)
 
   useEffect(() => {
     const updateClocks = () => {
@@ -119,12 +129,28 @@ function App() {
         setForecast(nextForecast)
       })
     }, 30 * 60_000)
+    const newsTimer = window.setInterval(async () => {
+      const nextNewsFeed = await fetchNewsFeed()
+
+      startTransition(() => {
+        setNewsFeed(nextNewsFeed)
+      })
+    }, 5 * 60_000)
+    const wallTimer = window.setInterval(async () => {
+      const nextWall = await fetchWall()
+
+      startTransition(() => {
+        setWall(nextWall)
+      })
+    }, WALL_REFRESH_MS)
 
     return () => {
       window.clearInterval(clockTimer)
       window.clearInterval(weatherTimer)
+      window.clearInterval(newsTimer)
+      window.clearInterval(wallTimer)
     }
-  }, [])
+  }, [fetchNewsFeed, fetchWall])
 
   return (
     <main className="h-[100svh] w-screen overflow-hidden px-6 py-5 2xl:px-8 2xl:py-6">
@@ -139,17 +165,21 @@ function App() {
                 Statusoverzicht
               </h1>
               <p className="m-0 text-xl text-muted-foreground 2xl:text-2xl">
-                {mockWallData.generatedAt}
+                {wall.generatedAt}
               </p>
             </div>
           </div>
           <CalendarPanel />
           <div className="grid grid-cols-2 gap-3">
-            <WallChip icon={<Rows3 className="size-4" />} label={mockWallData.statusLabel} />
-            <WallChip icon={<Cpu className="size-4" />} label={mockWallData.connectionLabel} />
+            <WallChip icon={<Rows3 className="size-4" />} label={wall.statusLabel} />
+            <WallChip icon={<Cpu className="size-4" />} label={wall.connectionLabel} />
             <WallChip
               icon={<Newspaper className="size-4" />}
-              label={`${mockWallData.headlines.length} koppen klaar`}
+              label={
+                newsFeed.status === 'live'
+                  ? `${newsFeed.items.length} live koppen`
+                  : `${newsFeed.items.length} mock koppen`
+              }
             />
             <WallChip
               icon={<SunMedium className="size-4" />}
@@ -159,10 +189,10 @@ function App() {
         </header>
 
         <section className="grid min-h-0 grid-cols-[0.95fr_1.2fr_1fr] gap-4">
-          <HostsPanel hosts={mockWallData.hosts} />
-          <AgendaPanel agenda={mockWallData.agenda} />
+          <HostsPanel hosts={wall.hosts} />
+          <NewsPanel headlines={newsFeed.items} status={newsFeed.status} />
           <RightRail
-            headlines={mockWallData.headlines}
+            agenda={mockWallData.agenda}
             forecast={forecast}
             clocks={clocks}
           />
@@ -317,7 +347,9 @@ function HostTemperatureChart({ host }: { host: HostStatus }) {
         <p className="m-0 text-[10px] uppercase tracking-[0.12em] text-muted-foreground 2xl:text-xs">
           CPU temperatuur
         </p>
-        <p className="m-0 font-mono text-lg font-medium 2xl:text-xl">{host.cpuTempC}°C</p>
+        <p className="m-0 font-mono text-lg font-medium 2xl:text-xl">
+          {host.cpuTempC === null ? 'n/a' : `${host.cpuTempC}°C`}
+        </p>
       </div>
       <div className="h-16 w-full">
         <ResponsiveContainer width="100%" height="100%">
@@ -369,7 +401,13 @@ function AgendaPanel({ agenda }: { agenda: AgendaItem[] }) {
   )
 }
 
-function NewsPanel({ headlines }: { headlines: Headline[] }) {
+function NewsPanel({
+  headlines,
+  status,
+}: {
+  headlines: Headline[]
+  status: LiveWidgets['newsFeed']['status']
+}) {
   const pages = chunkHeadlines(headlines, NEWS_PAGE_SIZE)
   const [pageIndex, setPageIndex] = useState(0)
 
@@ -400,20 +438,14 @@ function NewsPanel({ headlines }: { headlines: Headline[] }) {
           <div>
             <CardTitle className="text-2xl 2xl:text-3xl">Nieuws</CardTitle>
             <CardDescription className="text-base 2xl:text-lg">
-              Relevante koppen voor de wall. Kort, scanbaar en ondergeschikt aan de agenda.
+              {status === 'live'
+                ? 'Live uit FreshRSS. Kort, scanbaar en ondergeschikt aan de agenda.'
+                : 'Fallback feed. FreshRSS is nog niet beschikbaar of niet geconfigureerd.'}
             </CardDescription>
           </div>
           {pages.length > 1 ? (
-            <div className="flex items-center gap-2 pt-1">
-              {pages.map((_, index) => (
-                <span
-                  key={`news-page-${index + 1}`}
-                  className={[
-                    'block h-2.5 w-2.5 rounded-full transition-colors',
-                    index === pageIndex ? 'bg-primary' : 'bg-muted',
-                  ].join(' ')}
-                />
-              ))}
+            <div className="pt-1 text-sm tabular-nums text-muted-foreground 2xl:text-base">
+              {pageIndex + 1} / {pages.length}
             </div>
           ) : null}
         </div>
@@ -422,24 +454,38 @@ function NewsPanel({ headlines }: { headlines: Headline[] }) {
         {visibleHeadlines.map((headline) => (
           <div
             key={headline.id}
-            className="grid grid-cols-[9rem_minmax(0,1fr)_auto] gap-4 rounded-lg border p-4 2xl:grid-cols-[10rem_minmax(0,1fr)_auto]"
+            className={[
+              'gap-4 rounded-lg border p-4',
+              headline.imageSrc
+                ? 'grid grid-cols-[7.5rem_minmax(0,1fr)] 2xl:grid-cols-[8rem_minmax(0,1fr)]'
+                : 'block',
+            ].join(' ')}
           >
-            <img
-              src={headline.imageSrc}
-              alt=""
-              className="h-24 w-36 rounded-md object-cover 2xl:h-28 2xl:w-40"
-            />
+            {headline.imageSrc ? (
+              <img
+                src={headline.imageSrc}
+                alt=""
+                className="h-20 w-30 rounded-md object-cover 2xl:h-24 2xl:w-32"
+              />
+            ) : null}
             <div className="min-w-0 space-y-3">
-              <div className="flex flex-wrap gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="outline" className="text-xs 2xl:text-sm">{headline.source}</Badge>
                 <Badge variant="outline" className="text-xs 2xl:text-sm">{headline.category}</Badge>
+                <Badge
+                  variant="outline"
+                  className={`text-xs 2xl:text-sm ${newsPriorityTone(headline.priority)}`}
+                >
+                  {headline.priority}
+                </Badge>
+                <span className="text-xs text-muted-foreground 2xl:text-sm">{headline.age}</span>
               </div>
-              <p className="m-0 line-clamp-3 text-xl font-medium leading-tight 2xl:text-2xl">
+              <p className="m-0 line-clamp-2 text-xl font-medium leading-tight 2xl:text-2xl">
                 {headline.title}
               </p>
-            </div>
-            <div className="text-right">
-              <p className="m-0 text-sm text-muted-foreground 2xl:text-base">{headline.age}</p>
+              <p className="m-0 line-clamp-2 text-sm leading-6 text-muted-foreground 2xl:text-base">
+                {headline.summary}
+              </p>
             </div>
           </div>
         ))}
@@ -449,17 +495,17 @@ function NewsPanel({ headlines }: { headlines: Headline[] }) {
 }
 
 function RightRail({
-  headlines,
+  agenda,
   forecast,
   clocks,
 }: {
-  headlines: Headline[]
+  agenda: AgendaItem[]
   forecast: Forecast[] | null
   clocks: typeof mockWallData.clocks
 }) {
   return (
     <div className="grid min-h-0 grid-rows-[1.1fr_auto] gap-4">
-      <NewsPanel headlines={headlines} />
+      <AgendaPanel agenda={agenda} />
 
       <div className="grid grid-cols-2 gap-4">
         <Card className="py-0">
@@ -544,8 +590,10 @@ async function getLiveWidgets(): Promise<LiveWidgets> {
   const now = new Date()
 
   return {
+    wall: await getWallCollector(),
     clocks: buildClockCards(now),
     forecast: await fetchForecastOrNull(),
+    newsFeed: await getWallNewsFeed(),
   }
 }
 
@@ -673,4 +721,15 @@ function chunkHeadlines(headlines: Headline[], pageSize: number) {
   }
 
   return pages
+}
+
+function newsPriorityTone(priority: Headline['priority']) {
+  switch (priority) {
+    case 'hoog':
+      return 'border-rose-500/30 bg-rose-500/10 text-rose-300'
+    case 'normaal':
+      return 'border-sky-500/30 bg-sky-500/10 text-sky-300'
+    case 'laag':
+      return 'border-muted bg-muted/40 text-muted-foreground'
+  }
 }
