@@ -2,7 +2,7 @@ import '@tanstack/react-start/server-only'
 
 import { format, formatDistanceToNow } from 'date-fns'
 import { nl } from 'date-fns/locale'
-import { mockWallData, type Headline } from '#/lib/mock-wall-data'
+import type { Headline } from '#/lib/wall-types'
 
 type FreshRssConfig = {
   apiBaseUrl: string
@@ -11,9 +11,9 @@ type FreshRssConfig = {
 }
 
 type WallNewsFeed = {
-  status: 'live' | 'mock' | 'error'
+  status: 'live' | 'error'
   updatedAt: string
-  source: 'freshrss' | 'mock'
+  source: 'freshrss'
   error: string | null
   items: Headline[]
 }
@@ -71,7 +71,7 @@ export async function getWallNewsFeedData(): Promise<WallNewsFeed> {
   const config = getFreshRssConfig()
 
   if (!config) {
-    return buildMockFeed('FreshRSS-config ontbreekt')
+    return buildErrorFeed('FreshRSS-config ontbreekt')
   }
 
   try {
@@ -86,7 +86,7 @@ export async function getWallNewsFeedData(): Promise<WallNewsFeed> {
       items: normalizeFreshRssEntries(entries),
     }
   } catch (error) {
-    return buildMockFeed(error instanceof Error ? error.message : 'FreshRSS ophalen mislukt')
+    return buildErrorFeed(error instanceof Error ? error.message : 'FreshRSS ophalen mislukt')
   }
 }
 
@@ -241,7 +241,7 @@ function normalizeFreshRssEntries(
     return items
   }
 
-  return mockWallData.headlines.slice(0, DEFAULT_NEWS_LIMIT)
+  return []
 }
 
 function normalizeFreshRssEntry(
@@ -426,13 +426,13 @@ function includesAny(input: string, needles: string[]) {
   return needles.some((needle) => input.includes(needle))
 }
 
-function buildMockFeed(error: string): WallNewsFeed {
+function buildErrorFeed(error: string): WallNewsFeed {
   return {
-    status: 'mock',
+    status: 'error',
     updatedAt: new Date().toISOString(),
-    source: 'mock',
+    source: 'freshrss',
     error,
-    items: mockWallData.headlines.slice(0, DEFAULT_NEWS_LIMIT),
+    items: [],
   }
 }
 

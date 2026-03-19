@@ -2,7 +2,7 @@ import '@tanstack/react-start/server-only'
 
 import { formatDistanceToNowStrict } from 'date-fns'
 import { nl } from 'date-fns/locale'
-import type { HealthState, HostMetric, HostStatus } from '#/lib/mock-wall-data'
+import type { HealthState, HostMetric, HostStatus } from '#/lib/wall-types'
 
 type WallnodeSnapshot = {
   hostname: string
@@ -228,6 +228,7 @@ function mapSnapshotToHost(target: WallHostTarget, snapshot: WallnodeSnapshot): 
     name: snapshot.hostname || target.name,
     role: displayAddress(target, snapshot.role),
     state: snapshot.state,
+    error: null,
     uptime: formatUptime(snapshot.uptimeSec),
     load: formatLoad(snapshot.load),
     cpuTempC,
@@ -237,23 +238,41 @@ function mapSnapshotToHost(target: WallHostTarget, snapshot: WallnodeSnapshot): 
 }
 
 function buildUnavailableHost(target: WallHostTarget, error: unknown): HostStatus {
-  const reason = error instanceof Error ? error.message : 'host unavailable'
-
   return {
     id: target.id,
     name: target.name,
     role: displayAddress(target),
     state: 'critical',
+    error: compactHostError(error),
     uptime: 'offline',
     load: 'n/a / n/a / n/a',
     cpuTempC: null,
     cpuTempSeries: [],
     metrics: [
       { label: 'CPU', value: 'offline', percent: 0, state: 'critical' },
-      { label: 'Geheugen', value: reason, percent: 0, state: 'critical' },
+      { label: 'Geheugen', value: 'offline', percent: 0, state: 'critical' },
       { label: 'Schijf', value: 'offline', percent: 0, state: 'critical' },
     ],
   }
+}
+
+function compactHostError(error: unknown) {
+  const reason = error instanceof Error ? error.message : 'host unavailable'
+  const lower = reason.toLowerCase()
+
+  if (lower.includes('unable to connect') || lower.includes('fetch failed')) {
+    return 'Geen verbinding met host'
+  }
+
+  if (lower.includes('timed out') || lower.includes('timeout')) {
+    return 'Host reageert niet op tijd'
+  }
+
+  if (lower.includes('status 4') || lower.includes('status 5')) {
+    return 'Host gaf een foutstatus terug'
+  }
+
+  return 'Host niet bereikbaar'
 }
 
 function displayAddress(target: WallHostTarget, role?: string) {

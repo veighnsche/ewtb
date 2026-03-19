@@ -6,9 +6,9 @@
     "#/*": "./src/*"
   },
   "scripts": {
-    "dev": "vite dev --port 3000",
+    "dev": "bun node_modules/vite/bin/vite.js dev --host 127.0.0.1 --port 3102 --strictPort",
     "build": "vite build",
-    "preview": "vite preview",
+    "preview": "vite preview --host 127.0.0.1 --port 3102 --strictPort",
     "test": "vitest run",
     "format": "biome format",
     "lint": "biome lint",

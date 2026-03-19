@@ -44,22 +44,31 @@ import {
 import { Progress } from '#/components/ui/progress'
 import { Separator } from '#/components/ui/separator'
 import {
-  mockWallData,
   type AgendaItem,
+  type ClockCard,
   type Forecast,
   type HealthState,
   type Headline,
   type HostMetric,
   type HostStatus,
-} from '#/lib/mock-wall-data'
+} from '#/lib/wall-types'
+import { getWallAgenda } from '#/lib/server/agenda'
 import { getWallNewsFeed } from '#/lib/server/news'
 import { getWallCollector } from '#/lib/server/wall'
 
 type LiveWidgets = {
   wall: Awaited<ReturnType<typeof getWallCollector>>
-  clocks: typeof mockWallData.clocks
-  forecast: Forecast[] | null
+  agenda: Awaited<ReturnType<typeof getWallAgenda>>
+  clocks: ClockCard[]
+  weather: WeatherState
   newsFeed: Awaited<ReturnType<typeof getWallNewsFeed>>
+}
+
+type WeatherState = {
+  forecast: Forecast[] | null
+  updatedAt: string | null
+  error: string | null
+  stale: boolean
 }
 
 const CLOCKS = [
@@ -73,13 +82,14 @@ const WEATHER_URL =
 const NEWS_PAGE_SIZE = 7
 const NEWS_PAGE_INTERVAL_MS = 12_000
 const WALL_REFRESH_MS = 5_000
+const WEATHER_TIMEOUT_MS = 5_000
+const WEATHER_REFRESH_OK_MS = 10 * 60_000
+const WEATHER_REFRESH_RETRY_MS = 60_000
 
 export const Route = createFileRoute('/')({
   loader: async () => getLiveWidgets(),
   component: App,
 })
-
-const WALL_DATE = parseISO('2026-03-18T08:42:00')
 
 function healthStateLabel(state: HealthState) {
   switch (state) {
@@ -106,9 +116,11 @@ function toneClasses(state: HealthState) {
 function App() {
   const liveWidgets = Route.useLoaderData()
   const [wall, setWall] = useState(liveWidgets.wall)
+  const [agenda, setAgenda] = useState(liveWidgets.agenda)
   const [clocks, setClocks] = useState(liveWidgets.clocks)
-  const [forecast, setForecast] = useState(liveWidgets.forecast)
+  const [weather, setWeather] = useState(liveWidgets.weather)
   const [newsFeed, setNewsFeed] = useState(liveWidgets.newsFeed)
+  const fetchAgenda = useServerFn(getWallAgenda)
   const fetchNewsFeed = useServerFn(getWallNewsFeed)
   const fetchWall = useServerFn(getWallCollector)
 
@@ -122,13 +134,30 @@ function App() {
     updateClocks()
 
     const clockTimer = window.setInterval(updateClocks, 30_000)
-    const weatherTimer = window.setInterval(async () => {
-      const nextForecast = await fetchForecastOrNull()
+    let weatherTimer: number | null = null
+    let latestWeather = liveWidgets.weather
+    const scheduleWeatherRefresh = (delay: number) => {
+      weatherTimer = window.setTimeout(async () => {
+        const nextWeather = await fetchWeatherState(latestWeather)
 
-      startTransition(() => {
-        setForecast(nextForecast)
-      })
-    }, 30 * 60_000)
+        latestWeather = nextWeather
+
+        startTransition(() => {
+          setWeather(nextWeather)
+        })
+
+        scheduleWeatherRefresh(
+          nextWeather.forecast && !nextWeather.stale
+            ? WEATHER_REFRESH_OK_MS
+            : WEATHER_REFRESH_RETRY_MS,
+        )
+      }, delay)
+    }
+    scheduleWeatherRefresh(
+      latestWeather.forecast && !latestWeather.stale
+        ? WEATHER_REFRESH_OK_MS
+        : WEATHER_REFRESH_RETRY_MS,
+    )
     const newsTimer = window.setInterval(async () => {
       const nextNewsFeed = await fetchNewsFeed()
 
@@ -136,6 +165,13 @@ function App() {
         setNewsFeed(nextNewsFeed)
       })
     }, 5 * 60_000)
+    const agendaTimer = window.setInterval(async () => {
+      const nextAgenda = await fetchAgenda()
+
+      startTransition(() => {
+        setAgenda(nextAgenda)
+      })
+    }, 60_000)
     const wallTimer = window.setInterval(async () => {
       const nextWall = await fetchWall()
 
@@ -146,11 +182,14 @@ function App() {
 
     return () => {
       window.clearInterval(clockTimer)
-      window.clearInterval(weatherTimer)
+      if (weatherTimer !== null) {
+        window.clearTimeout(weatherTimer)
+      }
       window.clearInterval(newsTimer)
+      window.clearInterval(agendaTimer)
       window.clearInterval(wallTimer)
     }
-  }, [fetchNewsFeed, fetchWall])
+  }, [fetchAgenda, fetchNewsFeed, fetchWall, liveWidgets.weather])
 
   return (
     <main className="h-[100svh] w-screen overflow-hidden px-6 py-5 2xl:px-8 2xl:py-6">
@@ -169,7 +208,7 @@ function App() {
               </p>
             </div>
           </div>
-          <CalendarPanel />
+          <CalendarPanel agenda={agenda} />
           <div className="grid grid-cols-2 gap-3">
             <WallChip icon={<Rows3 className="size-4" />} label={wall.statusLabel} />
             <WallChip icon={<Cpu className="size-4" />} label={wall.connectionLabel} />
@@ -178,22 +217,26 @@ function App() {
               label={
                 newsFeed.status === 'live'
                   ? `${newsFeed.items.length} live koppen`
-                  : `${newsFeed.items.length} mock koppen`
+                  : 'nieuws fout'
               }
             />
             <WallChip
               icon={<SunMedium className="size-4" />}
-              label={forecast ? `${forecast.length} dagen vooruitzicht` : 'weer offline'}
+              label={
+                weather.forecast
+                  ? `${weather.forecast.length} dagen vooruitzicht${weather.stale ? ' • verouderd' : ''}`
+                  : 'weer offline'
+              }
             />
           </div>
         </header>
 
         <section className="grid min-h-0 grid-cols-[0.95fr_1.2fr_1fr] gap-4">
           <HostsPanel hosts={wall.hosts} />
-          <NewsPanel headlines={newsFeed.items} status={newsFeed.status} />
+          <NewsPanel headlines={newsFeed.items} status={newsFeed.status} error={newsFeed.error} />
           <RightRail
-            agenda={mockWallData.agenda}
-            forecast={forecast}
+            agenda={agenda}
+            weather={weather}
             clocks={clocks}
           />
         </section>
@@ -202,8 +245,9 @@ function App() {
   )
 }
 
-function CalendarPanel() {
-  const days = buildWallCalendar()
+function CalendarPanel({ agenda }: { agenda: LiveWidgets['agenda'] }) {
+  const days = buildWallCalendar(new Date())
+  const agendaDates = new Set(agenda.items.map((item) => item.dateIso))
 
   return (
     <div className="grid grid-cols-14 gap-x-2 gap-y-3 self-center px-2">
@@ -211,7 +255,7 @@ function CalendarPanel() {
         <div
           key={day.iso}
           className={[
-            'text-center',
+            'relative text-center',
             day.isToday ? 'text-primary' : '',
             day.isWeekend ? 'text-muted-foreground/70' : '',
             day.isPastMonth && index < 14 ? 'opacity-50' : '',
@@ -221,6 +265,9 @@ function CalendarPanel() {
           <p className="m-0 text-2xl font-semibold leading-none 2xl:text-3xl">
             {day.day}
           </p>
+          {agendaDates.has(day.iso) ? (
+            <div className="pointer-events-none absolute left-1/2 top-[calc(100%-0.1rem)] h-1.5 w-1.5 -translate-x-1/2 rounded-full bg-sky-400/90" />
+          ) : null}
         </div>
       ))}
     </div>
@@ -257,6 +304,9 @@ function HostsPanel({
                 <div className="min-w-0">
                   <p className="m-0 truncate text-xl font-medium 2xl:text-2xl">{host.name}</p>
                   <p className="m-0 truncate text-sm text-muted-foreground 2xl:text-base">{host.role}</p>
+                  {host.error ? (
+                    <p className="m-0 mt-1 truncate text-xs text-rose-300 2xl:text-sm">{host.error}</p>
+                  ) : null}
                 </div>
                 <Badge
                   variant="outline"
@@ -370,32 +420,53 @@ function HostTemperatureChart({ host }: { host: HostStatus }) {
   )
 }
 
-function AgendaPanel({ agenda }: { agenda: AgendaItem[] }) {
+function AgendaPanel({
+  agenda,
+  status,
+  error,
+}: {
+  agenda: AgendaItem[]
+  status: LiveWidgets['agenda']['status']
+  error: string | null
+}) {
   return (
     <Card className="min-h-0 py-0">
       <CardHeader className="px-6 pt-5">
-        <CardTitle className="text-4xl 2xl:text-5xl">Agenda vandaag</CardTitle>
-        <CardDescription className="text-lg 2xl:text-xl">
-          Belangrijkste onderdeel van de wall. Dit moet in een oogopslag leesbaar zijn vanaf de andere kant van de kamer.
+        <CardTitle className="text-2xl 2xl:text-3xl">Agenda</CardTitle>
+        <CardDescription className="text-base 2xl:text-lg">
+          Eerstvolgende dingen op tijdvolgorde.
         </CardDescription>
       </CardHeader>
       <CardContent className="grid min-h-0 gap-4 px-6 pb-5">
-        {agenda.map((item) => (
-          <div key={item.id} className="grid grid-cols-[auto_1fr] gap-5 rounded-lg border p-5">
-            <div className="flex min-w-32 flex-col items-start justify-between rounded-md bg-muted/40 px-4 py-3">
-              <p className="m-0 text-sm uppercase tracking-[0.18em] text-muted-foreground 2xl:text-base">
-                Tijd
-              </p>
-              <p className="m-0 text-4xl font-semibold tracking-tight 2xl:text-5xl">{item.time}</p>
-            </div>
-            <div className="space-y-3">
-              <p className="m-0 text-3xl font-medium leading-tight 2xl:text-4xl">{item.title}</p>
-              <p className="m-0 text-xl leading-8 text-muted-foreground 2xl:text-2xl">
-                {item.context}
-              </p>
-            </div>
+        {status === 'error' ? (
+          <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-4">
+            <p className="m-0 text-lg font-medium text-rose-300 2xl:text-xl">Agenda niet beschikbaar</p>
+            <p className="m-0 mt-2 text-sm text-rose-200/80 2xl:text-base">
+              {error ?? 'Geen live agenda-data beschikbaar.'}
+            </p>
           </div>
-        ))}
+        ) : (
+          agenda.map((item) => (
+            <div key={item.id} className="rounded-lg border p-5">
+              <div className="mb-3 flex items-baseline justify-between gap-4">
+                <p className="m-0 min-w-0 text-xs uppercase tracking-[0.18em] text-muted-foreground 2xl:text-sm">
+                  {item.dateLabel}
+                </p>
+                <p className="m-0 shrink-0 text-xl font-semibold tracking-tight 2xl:text-2xl">
+                  {item.time}
+                </p>
+              </div>
+              <div className="space-y-2">
+                <p className="m-0 text-xl font-medium leading-tight text-balance 2xl:text-2xl">
+                  {item.title}
+                </p>
+                <p className="m-0 text-sm leading-6 text-muted-foreground 2xl:text-base">
+                  {item.context}
+                </p>
+              </div>
+            </div>
+          ))
+        )}
       </CardContent>
     </Card>
   )
@@ -404,9 +475,11 @@ function AgendaPanel({ agenda }: { agenda: AgendaItem[] }) {
 function NewsPanel({
   headlines,
   status,
+  error,
 }: {
   headlines: Headline[]
   status: LiveWidgets['newsFeed']['status']
+  error: string | null
 }) {
   const pages = chunkHeadlines(headlines, NEWS_PAGE_SIZE)
   const [pageIndex, setPageIndex] = useState(0)
@@ -440,7 +513,7 @@ function NewsPanel({
             <CardDescription className="text-base 2xl:text-lg">
               {status === 'live'
                 ? 'Live uit FreshRSS. Kort, scanbaar en ondergeschikt aan de agenda.'
-                : 'Fallback feed. FreshRSS is nog niet beschikbaar of niet geconfigureerd.'}
+                : 'Geen live nieuws beschikbaar.'}
             </CardDescription>
           </div>
           {pages.length > 1 ? (
@@ -451,44 +524,53 @@ function NewsPanel({
         </div>
       </CardHeader>
       <CardContent className="grid min-h-0 gap-3 px-5 pb-5">
-        {visibleHeadlines.map((headline) => (
-          <div
-            key={headline.id}
-            className={[
-              'gap-4 rounded-lg border p-4',
-              headline.imageSrc
-                ? 'grid grid-cols-[7.5rem_minmax(0,1fr)] 2xl:grid-cols-[8rem_minmax(0,1fr)]'
-                : 'block',
-            ].join(' ')}
-          >
-            {headline.imageSrc ? (
-              <img
-                src={headline.imageSrc}
-                alt=""
-                className="h-20 w-30 rounded-md object-cover 2xl:h-24 2xl:w-32"
-              />
-            ) : null}
-            <div className="min-w-0 space-y-3">
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="outline" className="text-xs 2xl:text-sm">{headline.source}</Badge>
-                <Badge variant="outline" className="text-xs 2xl:text-sm">{headline.category}</Badge>
-                <Badge
-                  variant="outline"
-                  className={`text-xs 2xl:text-sm ${newsPriorityTone(headline.priority)}`}
-                >
-                  {headline.priority}
-                </Badge>
-                <span className="text-xs text-muted-foreground 2xl:text-sm">{headline.age}</span>
-              </div>
-              <p className="m-0 line-clamp-2 text-xl font-medium leading-tight 2xl:text-2xl">
-                {headline.title}
-              </p>
-              <p className="m-0 line-clamp-2 text-sm leading-6 text-muted-foreground 2xl:text-base">
-                {headline.summary}
-              </p>
-            </div>
+        {status === 'error' ? (
+          <div className="rounded-lg border border-rose-500/30 bg-rose-500/10 px-4 py-4">
+            <p className="m-0 text-lg font-medium text-rose-300 2xl:text-xl">Nieuws niet beschikbaar</p>
+            <p className="m-0 mt-2 text-sm text-rose-200/80 2xl:text-base">
+              {error ?? 'FreshRSS gaf geen live nieuws terug.'}
+            </p>
           </div>
-        ))}
+        ) : (
+          visibleHeadlines.map((headline) => (
+            <div
+              key={headline.id}
+              className={[
+                'gap-4 rounded-lg border p-4',
+                headline.imageSrc
+                  ? 'grid grid-cols-[7.5rem_minmax(0,1fr)] 2xl:grid-cols-[8rem_minmax(0,1fr)]'
+                  : 'block',
+              ].join(' ')}
+            >
+              {headline.imageSrc ? (
+                <img
+                  src={headline.imageSrc}
+                  alt=""
+                  className="h-20 w-30 rounded-md object-cover 2xl:h-24 2xl:w-32"
+                />
+              ) : null}
+              <div className="min-w-0 space-y-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="outline" className="text-xs 2xl:text-sm">{headline.source}</Badge>
+                  <Badge variant="outline" className="text-xs 2xl:text-sm">{headline.category}</Badge>
+                  <Badge
+                    variant="outline"
+                    className={`text-xs 2xl:text-sm ${newsPriorityTone(headline.priority)}`}
+                  >
+                    {headline.priority}
+                  </Badge>
+                  <span className="text-xs text-muted-foreground 2xl:text-sm">{headline.age}</span>
+                </div>
+                <p className="m-0 line-clamp-2 text-xl font-medium leading-tight 2xl:text-2xl">
+                  {headline.title}
+                </p>
+                <p className="m-0 line-clamp-2 text-sm leading-6 text-muted-foreground 2xl:text-base">
+                  {headline.summary}
+                </p>
+              </div>
+            </div>
+          ))
+        )}
       </CardContent>
     </Card>
   )
@@ -496,16 +578,16 @@ function NewsPanel({
 
 function RightRail({
   agenda,
-  forecast,
+  weather,
   clocks,
 }: {
-  agenda: AgendaItem[]
-  forecast: Forecast[] | null
-  clocks: typeof mockWallData.clocks
+  agenda: LiveWidgets['agenda']
+  weather: WeatherState
+  clocks: ClockCard[]
 }) {
   return (
     <div className="grid min-h-0 grid-rows-[1.1fr_auto] gap-4">
-      <AgendaPanel agenda={agenda} />
+      <AgendaPanel agenda={agenda.items} status={agenda.status} error={agenda.error} />
 
       <div className="grid grid-cols-2 gap-4">
         <Card className="py-0">
@@ -531,10 +613,15 @@ function RightRail({
         <Card className="py-0">
           <CardHeader className="px-5 pt-4">
             <CardTitle className="text-2xl 2xl:text-3xl">Weer</CardTitle>
+            {weather.stale && weather.forecast ? (
+              <CardDescription className="text-sm 2xl:text-base">
+                Tijdelijk verouderd. Laatste geldige data blijft zichtbaar.
+              </CardDescription>
+            ) : null}
           </CardHeader>
           <CardContent className="grid gap-3 px-5 pb-5">
-            {forecast ? (
-              forecast.map((item) => (
+            {weather.forecast ? (
+              weather.forecast.map((item) => (
                 <div key={item.day} className="flex items-center justify-between rounded-lg border px-4 py-3">
                   <div className="flex items-center gap-3">
                     <div className="flex size-12 items-center justify-center rounded-full bg-muted/35 text-4xl text-primary 2xl:size-14 2xl:text-5xl">
@@ -558,7 +645,7 @@ function RightRail({
               <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-4 py-4">
                 <p className="m-0 text-lg font-medium text-amber-300 2xl:text-xl">Weerdata niet beschikbaar</p>
                 <p className="m-0 mt-2 text-sm text-amber-200/80 2xl:text-base">
-                  Geen verbinding met de weerbron. Er wordt geen mock data getoond.
+                  {weather.error ?? 'Geen verbinding met de weerbron.'}
                 </p>
               </div>
             )}
@@ -569,8 +656,8 @@ function RightRail({
   )
 }
 
-function buildWallCalendar() {
-  const firstOfMonth = startOfMonth(WALL_DATE)
+function buildWallCalendar(referenceDate: Date) {
+  const firstOfMonth = startOfMonth(referenceDate)
   const start = startOfWeek(firstOfMonth, { weekStartsOn: 1 })
   const days = eachDayOfInterval({ start, end: addDays(start, 55) })
 
@@ -579,9 +666,9 @@ function buildWallCalendar() {
       iso: formatISO(current, { representation: 'date' }),
       day: format(current, 'd'),
       isWeekend: isWeekend(current),
-      isToday: isSameDay(current, WALL_DATE),
-      isPastMonth: !isSameMonth(current, WALL_DATE) && isBefore(current, WALL_DATE),
-      isNextMonth: !isSameMonth(current, WALL_DATE) && !isBefore(current, WALL_DATE),
+      isToday: isSameDay(current, referenceDate),
+      isPastMonth: !isSameMonth(current, referenceDate) && isBefore(current, referenceDate),
+      isNextMonth: !isSameMonth(current, referenceDate) && !isBefore(current, referenceDate),
     }
   })
 }
@@ -591,8 +678,9 @@ async function getLiveWidgets(): Promise<LiveWidgets> {
 
   return {
     wall: await getWallCollector(),
+    agenda: await getWallAgenda(),
     clocks: buildClockCards(now),
-    forecast: await fetchForecastOrNull(),
+    weather: await fetchWeatherState(),
     newsFeed: await getWallNewsFeed(),
   }
 }
@@ -618,51 +706,79 @@ function buildClockCards(now: Date) {
 }
 
 async function fetchLiveForecast(): Promise<Forecast[]> {
-  const response = await fetch(WEATHER_URL)
+  const controller = new AbortController()
+  const timeout = setTimeout(() => controller.abort(), WEATHER_TIMEOUT_MS)
 
-  if (!response.ok) {
-    throw new Error(`Weather request failed with ${response.status}`)
-  }
+  try {
+    const response = await fetch(WEATHER_URL, {
+      signal: controller.signal,
+    })
 
-  const weather = (await response.json()) as {
-    daily?: {
-      time?: string[]
-      weather_code?: number[]
-      temperature_2m_max?: number[]
-      temperature_2m_min?: number[]
+    if (!response.ok) {
+      throw new Error(`Weather request failed with ${response.status}`)
     }
+
+    const weather = (await response.json()) as {
+      daily?: {
+        time?: string[]
+        weather_code?: number[]
+        temperature_2m_max?: number[]
+        temperature_2m_min?: number[]
+      }
+    }
+
+    const daily = weather.daily
+
+    if (
+      !daily?.time ||
+      !daily.weather_code ||
+      !daily.temperature_2m_max ||
+      !daily.temperature_2m_min
+    ) {
+      throw new Error('Weather payload missing required daily fields')
+    }
+
+    return daily.time.map((day, index) => ({
+      day:
+        index === 0
+          ? 'Vandaag'
+          : format(parseISO(day), 'EEEE', {
+              locale: nl,
+            }),
+      code: daily.weather_code?.[index] ?? 0,
+      condition: weatherCodeLabel(daily.weather_code?.[index] ?? 0),
+      high: `${Math.round(daily.temperature_2m_max?.[index] ?? 0)}°`,
+      low: `${Math.round(daily.temperature_2m_min?.[index] ?? 0)}°`,
+    }))
+  } finally {
+    clearTimeout(timeout)
   }
-
-  const daily = weather.daily
-
-  if (
-    !daily?.time ||
-    !daily.weather_code ||
-    !daily.temperature_2m_max ||
-    !daily.temperature_2m_min
-  ) {
-    throw new Error('Weather payload missing required daily fields')
-  }
-
-  return daily.time.map((day, index) => ({
-    day:
-      index === 0
-        ? 'Vandaag'
-        : format(parseISO(day), 'EEEE', {
-            locale: nl,
-          }),
-    code: daily.weather_code?.[index] ?? 0,
-    condition: weatherCodeLabel(daily.weather_code?.[index] ?? 0),
-    high: `${Math.round(daily.temperature_2m_max?.[index] ?? 0)}°`,
-    low: `${Math.round(daily.temperature_2m_min?.[index] ?? 0)}°`,
-  }))
 }
 
-async function fetchForecastOrNull() {
+async function fetchWeatherState(previous?: WeatherState): Promise<WeatherState> {
   try {
-    return await fetchLiveForecast()
-  } catch {
-    return null
+    return {
+      forecast: await fetchLiveForecast(),
+      updatedAt: new Date().toISOString(),
+      error: null,
+      stale: false,
+    }
+  } catch (error) {
+    if (previous?.forecast) {
+      return {
+        forecast: previous.forecast,
+        updatedAt: previous.updatedAt,
+        error: error instanceof Error ? error.message : 'Weather fetch failed',
+        stale: true,
+      }
+    }
+
+    return {
+      forecast: null,
+      updatedAt: null,
+      error: error instanceof Error ? error.message : 'Weather fetch failed',
+      stale: false,
+    }
   }
 }
 
