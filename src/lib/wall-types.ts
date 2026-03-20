@@ -45,11 +45,27 @@ export type Forecast = {
 
 export type AgendaItem = {
   id: string
+  calendar: string
   dateIso: string
   dateLabel: string
   time: string
+  endTime: string | null
+  timeLabel: string
   title: string
   context: string
+  isPast: boolean
+  isAllDay: boolean
+}
+
+export type AgendaTask = {
+  id: string
+  calendar: string
+  title: string
+  context: string
+  dueIso: string | null
+  dueLabel: string
+  statusLabel: string
+  isOverdue: boolean
 }
 
 export type ClockCard = {

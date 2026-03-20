@@ -41,6 +41,7 @@ function RootDocument({ children }: { children: React.ReactNode }) {
     select: (state) => state.location.pathname,
   })
   const isWallRoute = pathname === '/'
+  const showDevtools = !isWallRoute && import.meta.env.DEV
 
   return (
     <html lang="nl" className="dark" data-theme="dark" suppressHydrationWarning>
@@ -57,17 +58,19 @@ function RootDocument({ children }: { children: React.ReactNode }) {
         {isWallRoute ? null : <Header />}
         {children}
         {isWallRoute ? null : <Footer />}
-        <TanStackDevtools
-          config={{
-            position: 'bottom-right',
-          }}
-          plugins={[
-            {
-              name: 'Tanstack Router',
-              render: <TanStackRouterDevtoolsPanel />,
-            },
-          ]}
-        />
+        {showDevtools ? (
+          <TanStackDevtools
+            config={{
+              position: 'bottom-right',
+            }}
+            plugins={[
+              {
+                name: 'Tanstack Router',
+                render: <TanStackRouterDevtoolsPanel />,
+              },
+            ]}
+          />
+        ) : null}
         <Scripts />
       </body>
     </html>

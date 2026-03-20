@@ -3,8 +3,6 @@
 
 @import 'tw-animate-css';
 
-@import "tw-animate-css";
-
 @import "shadcn/tailwind.css";
 
 @import "@fontsource-variable/geist-mono";
@@ -167,6 +165,42 @@ pre code {
 .page-wrap {
   width: min(1080px, calc(100% - 2rem));
   margin-inline: auto;
+}
+
+.wall-pan-viewport {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.wall-pan-viewport::-webkit-scrollbar {
+  display: none;
+}
+
+.wall-pan-track {
+  --wall-pan-gap: 1rem;
+  width: calc(
+    (100% * var(--wall-pan-columns) / var(--wall-visible-columns)) +
+    (var(--wall-pan-gap) * ((var(--wall-pan-columns) - var(--wall-visible-columns)) / var(--wall-visible-columns)))
+  );
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: var(--wall-pan-gap);
+  align-items: stretch;
+  min-height: 100%;
+}
+
+.wall-pan-column {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  max-height: 100%;
+  align-self: stretch;
+}
+
+@media (max-width: 1100px) {
+  .wall-pan-track {
+    width: 100%;
+    grid-template-columns: 1fr;
+  }
 }
 
 @layer base {

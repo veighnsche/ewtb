@@ -6,8 +6,11 @@ To run this application:
 
 ```bash
 bun install
-bun --bun run dev
+cp .env.example .env
+just dev
 ```
+
+All runtime configuration lives in `.env`. The repository includes `.env.example` as the template. `just dev`, `just preview`, and `just wall-prod` all use the same file.
 
 # Building For Production
 
@@ -15,6 +18,13 @@ To build this application for production:
 
 ```bash
 bun --bun run build
+```
+
+To run the built wall server:
+
+```bash
+bun --bun run build
+just wall-prod
 ```
 
 ## Testing

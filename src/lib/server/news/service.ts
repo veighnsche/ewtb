@@ -11,11 +11,17 @@ type FreshRssConfig = {
 }
 
 type WallNewsFeed = {
-  status: 'live' | 'error'
-  updatedAt: string
+  status: 'live' | 'loading' | 'error'
+  updatedAt: string | null
   source: 'freshrss'
   error: string | null
   items: Headline[]
+}
+
+type NewsCollectorState = {
+  cache: WallNewsFeed | null
+  refreshPromise: Promise<WallNewsFeed> | null
+  started: boolean
 }
 
 type FreshRssStreamResponse = {
@@ -66,6 +72,9 @@ const DEFAULT_NEWS_LIMIT = 140
 const PER_FEED_FETCH_LIMIT = 2
 const DEFAULT_CATEGORY = 'algemeen'
 const DEFAULT_LANGUAGE = 'EN'
+const NEWS_REFRESH_MS = 5 * 60_000
+const INITIAL_NEWS_WAIT_MS = 250
+const globalKey = '__ewtbNewsCollectorState'
 
 export async function getWallNewsFeedData(): Promise<WallNewsFeed> {
   const config = getFreshRssConfig()
@@ -74,20 +83,18 @@ export async function getWallNewsFeedData(): Promise<WallNewsFeed> {
     return buildErrorFeed('FreshRSS-config ontbreekt')
   }
 
-  try {
-    const authToken = await loginToFreshRss(config)
-    const entries = await fetchFreshRssBalancedEntries(config, authToken, DEFAULT_NEWS_LIMIT)
+  const state = getCollectorState()
+  startCollectorLoop(state, config)
 
-    return {
-      status: 'live',
-      updatedAt: new Date().toISOString(),
-      source: 'freshrss',
-      error: null,
-      items: normalizeFreshRssEntries(entries),
-    }
-  } catch (error) {
-    return buildErrorFeed(error instanceof Error ? error.message : 'FreshRSS ophalen mislukt')
+  if (state.cache) {
+    return state.cache
   }
+
+  if (state.refreshPromise) {
+    return waitForInitialRefresh(state.refreshPromise)
+  }
+
+  return buildLoadingFeed()
 }
 
 function getFreshRssConfig(): FreshRssConfig | null {
@@ -433,6 +440,104 @@ function buildErrorFeed(error: string): WallNewsFeed {
     source: 'freshrss',
     error,
     items: [],
+  }
+}
+
+function getCollectorState(): NewsCollectorState {
+  const globalState = globalThis as typeof globalThis & {
+    [globalKey]?: NewsCollectorState
+  }
+
+  if (!globalState[globalKey]) {
+    globalState[globalKey] = {
+      cache: null,
+      refreshPromise: null,
+      started: false,
+    }
+  }
+
+  return globalState[globalKey]
+}
+
+function startCollectorLoop(state: NewsCollectorState, config: FreshRssConfig) {
+  if (state.started) {
+    return
+  }
+
+  state.started = true
+
+  void refreshNewsFeed(state, config)
+
+  const timer = setInterval(() => {
+    void refreshNewsFeed(state, config)
+  }, NEWS_REFRESH_MS)
+  timer.unref?.()
+}
+
+function buildLoadingFeed(): WallNewsFeed {
+  return {
+    status: 'loading',
+    updatedAt: null,
+    source: 'freshrss',
+    error: null,
+    items: [],
+  }
+}
+
+async function waitForInitialRefresh(refreshPromise: Promise<WallNewsFeed>) {
+  return new Promise<WallNewsFeed>((resolve) => {
+    const timer = setTimeout(() => {
+      resolve(buildLoadingFeed())
+    }, INITIAL_NEWS_WAIT_MS)
+
+    void refreshPromise.then((feed) => {
+      clearTimeout(timer)
+      resolve(feed)
+    })
+  })
+}
+
+async function refreshNewsFeed(
+  state: NewsCollectorState,
+  config: FreshRssConfig,
+): Promise<WallNewsFeed> {
+  if (state.refreshPromise) {
+    return state.refreshPromise
+  }
+
+  state.refreshPromise = collectNewsFeed(config)
+    .then((result) => {
+      state.cache = result
+      return result
+    })
+    .catch((error) => {
+      if (state.cache) {
+        return state.cache
+      }
+
+      const fallback = buildErrorFeed(
+        error instanceof Error ? error.message : 'FreshRSS ophalen mislukt',
+      )
+      state.cache = fallback
+      return fallback
+    })
+    .finally(() => {
+      state.refreshPromise = null
+    })
+
+  return state.refreshPromise
+}
+
+async function collectNewsFeed(config: FreshRssConfig): Promise<WallNewsFeed> {
+  const authToken = await loginToFreshRss(config)
+  const entries = await fetchFreshRssBalancedEntries(config, authToken, DEFAULT_NEWS_LIMIT)
+
+  return {
+    status: 'live',
+    updatedAt: new Date().toISOString(),
+    source: 'freshrss',
+    error: null,
+    items: normalizeFreshRssEntries(entries),
   }
 }
 
